@@ -6,8 +6,10 @@ import sys
 from .vault import load_vault, save_vault
 from .models import VaultFile, VaultHeader, VaultEntry, KDFParameters
 from .utils import generate_random_bytes, build_aad
+from .audit import append_audit_log, get_last_hash
 
 VAULT_PATH = os.path.expanduser("~/.vaultkeep/vault.json")  # Default path to the vault file in the user's home directory
+AUDIT_LOG_PATH = os.path.expanduser("~/.vaultkeep/audit.log")  # Default path to the audit log file in the user's home directory
 
 @click.group()
 def cli():
@@ -44,6 +46,15 @@ def init(password):
     # Save vault to disk
     save_vault(vault, password.encode("utf-8"), VAULT_PATH)
 
+    # Append an audit log entry for the vault initialization
+    append_audit_log(
+        path=AUDIT_LOG_PATH,
+        operation="init",
+        item_id="vault",
+        success=True,
+        prior_hash="0" * 64
+    )
+
     # Print success message
     click.echo("Vault created successfully! Run 'vaultkeep add' to store your first password.")
 
@@ -74,6 +85,16 @@ def add(service, username, password, master_password):
     # Save the vault back to disk
     save_vault(vault, master_password.encode("utf-8"), VAULT_PATH)
 
+    # Get last hash and append audit log entry
+    prior_hash = get_last_hash(AUDIT_LOG_PATH)
+    append_audit_log(
+        path=AUDIT_LOG_PATH,
+        operation="add",
+        item_id=entry.item_id.hex(),
+        success=True,
+        prior_hash=prior_hash
+    )
+
     # Print success message
     click.echo("Success password added successfully")
 
@@ -87,14 +108,19 @@ def get(service, master_password):
     # Load the vault from the disk using the master password
     vault = load_vault(master_password.encode("utf-8"), VAULT_PATH)
 
+    # Get prior hash before the loop so both branches can use it
+    prior_hash = get_last_hash(AUDIT_LOG_PATH)
+
     # Search vault.entries for an entry where entry.service == service
     for entry in vault.entries:
-        if entry.service == service:       # If found, display the username and password
+        if entry.service == service:
             click.echo(f"Username: {entry.username}")
             click.echo(f"Password: {entry.password}")
+            append_audit_log(AUDIT_LOG_PATH, "get", service, True, prior_hash)
             break
-    else:                                  # If not found, print an error message
+    else:
         click.echo("No entry found for this service")
+        append_audit_log(AUDIT_LOG_PATH, "get", service, False, prior_hash)
 
 @cli.command(name="list")
 @click.option("--master-password", prompt="Master password", hide_input=True,
@@ -114,6 +140,16 @@ def list_entries(master_password):
     for entry in vault.entries:
         click.echo(f"Service: {entry.service}")
 
+    # Get last hash and append audit log entry
+    prior_hash = get_last_hash(AUDIT_LOG_PATH)
+    append_audit_log(
+        path=AUDIT_LOG_PATH,
+        operation="list",
+        item_id="vault",
+        success=True,
+        prior_hash=prior_hash
+    )
+
 @cli.command()
 @click.argument("service")
 @click.option("--master-password", prompt="Master password", hide_input=True,
@@ -129,10 +165,14 @@ def delete(service, master_password):
         if entry.service == service:
             vault.entries.remove(entry)
             save_vault(vault, master_password.encode("utf-8"), VAULT_PATH)
+            prior_hash = get_last_hash(AUDIT_LOG_PATH)
+            append_audit_log(AUDIT_LOG_PATH, "delete", entry.item_id.hex(), True, prior_hash)
             click.echo(f"Entry for {service} deleted successfully.")
             break
     else:
-        click.echo("not found")
+        prior_hash = get_last_hash(AUDIT_LOG_PATH)
+        append_audit_log(AUDIT_LOG_PATH, "delete", service, False, prior_hash)
+        click.echo(f"No entry found for {service}")
 
 if __name__ == "__main__":
     cli()
