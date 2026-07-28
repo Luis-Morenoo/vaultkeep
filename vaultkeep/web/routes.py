@@ -1,6 +1,6 @@
 """Contains all API endpoints"""
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 from .auth import generate_token, verify_token
 from .limiter import limiter
 from ..vault import load_vault, save_vault
@@ -137,4 +137,13 @@ def delete_entry(payload, service):
             return jsonify({"message": "Entry deleted successfully"}), 200
     else:
         return jsonify({"error": "Entry not found"}), 404
+
+
+@vault_bp.route("/")
+def index():
+    return render_template("login.html")
+
+@vault_bp.route("/dashboard")
+def dashboard():
+    return render_template("dashboard.html")
 

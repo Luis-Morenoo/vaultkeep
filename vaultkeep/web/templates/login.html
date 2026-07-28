@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <!-- metadata, title, styles go here -->
+         <title>VaultKeep Login</title>
+    </head>
+    <body>
+        <!-- visible content goes here -->
+         <form id="login-form">
+            <input type="password" id="password" placeholder="Master Password" required>
+            <button type="submit">Unlock Vault</button>
+         </form>
+         <p id="error-message"></p>
+         
+         <script>
+            document.getElementById("login-form").addEventListener("submit", async function(e) {
+                e.preventDefault(); // prevent page refresh
+
+                const password = document.getElementById("password").value;
+
+                // fetch here
+                fetch("/auth/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ password: password })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.token) {
+                        // data.token contains the JWT
+                        localStorage.setItem("token", data.token);
+                        window.location.href = "/dashboard"; // redirect
+                    } else {
+                        document.getElementById("error-message").textContent = "Invalid password. Try again.";
+                    }
+                })
+            });
+         </script>
+    </body>
+</html>

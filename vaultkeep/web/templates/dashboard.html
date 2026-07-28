@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>VaultKeep Dashboard</title>
+    </head>
+    <body>
+        <!-- title -->
+         <h1>VaultKeep</h1>
+        <!-- entries list -->
+         <ul id="entries-list"></ul>
+        <!-- add entry form with 4 inputs -->
+         <form id="dashboard-form">
+            <input type="text" id="service" placeholder="Service" required>
+            <input type="text" id="username" placeholder="Username" required>
+            <input type="password" id="password" placeholder="Password" required>
+            <input type="password" id="master-password" placeholder="Master-password" required>
+            <button type="submit">Add Entry</button>
+         </form>
+        <!-- logout button -->
+         <button id="logout-btn">Logout</button>
+
+         <script>
+            const token = localStorage.getItem("token");
+            if (!token) {
+                window.location.href = "/";
+            }
+
+            async function loadEntries() {
+                const password = document.getElementById("master-password").value;
+                const response = await fetch("/vault/entries", {
+                    method: "GET",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + token
+                    },
+                    body: JSON.stringify({ password: password })
+                });
+                const data = await response.json();
+                const list = document.getElementById("entries-list");
+                list.innerHTML = "";
+                data.services.forEach(service => {
+                    const li = document.createElement("li");
+                    li.textContent = service;
+                    list.appendChild(li);
+                });
+            }
+
+            document.getElementById("dashboard-form").addEventListener("submit", async function(e) {
+                e.preventDefault();
+                
+                const token = localStorage.getItem("token");
+                const response = await fetch("/vault/entries", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + token
+                    },
+                    body: JSON.stringify({
+                        password: document.getElementById("master-password").value,
+                        service: document.getElementById("service").value,
+                        username: document.getElementById("username").value,
+                        entry_password: document.getElementById("password").value
+                    })
+                });
+                
+                if (response.ok) {
+                    loadEntries();
+                }
+            });
+         </script>
+    </body>
+</html>
