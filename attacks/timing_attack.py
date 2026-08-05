@@ -6,15 +6,18 @@ import os
 import statistics
 import sys
 
+
 def naive_compare(a, b):
     """Naive comparison function that returns True if a == b, False otherwise."""
 
     return a == b
 
+
 def safe_compare(a, b):
     """Safe comparison function that returns True if a == b, False otherwise."""
 
     return hmac.compare_digest(a, b)
+
 
 def _time_compare(compare_fn, a, b, iterations):
     """Run compare_fn(a, b) `iterations` times and return per-call durations in seconds."""
