@@ -4,74 +4,130 @@
         <title>VaultKeep Dashboard</title>
     </head>
     <body>
-        <!-- title -->
-         <h1>VaultKeep</h1>
-        <!-- entries list -->
-         <ul id="entries-list"></ul>
-         <p id="error-message"></p>
-        <!-- add entry form with 4 inputs -->
-         <form id="dashboard-form">
+        <h1>VaultKeep</h1>
+
+        <!-- master password: needed to decrypt for list, add and delete -->
+        <input type="password" id="master-password" placeholder="Master password" required>
+        <button id="show-btn">Show entries</button>
+        <button id="logout-btn">Logout</button>
+
+        <ul id="entries-list"></ul>
+        <p id="error-message"></p>
+
+        <h3>Add entry</h3>
+        <form id="add-form">
             <input type="text" id="service" placeholder="Service" required>
             <input type="text" id="username" placeholder="Username" required>
             <input type="password" id="password" placeholder="Password" required>
-            <input type="password" id="master-password" placeholder="Master-password" required>
             <button type="submit">Add Entry</button>
-         </form>
-        <!-- logout button -->
-         <button id="logout-btn">Logout</button>
+        </form>
 
-         <script>
+        <script>
             const token = localStorage.getItem("token");
             if (!token) {
                 window.location.href = "/";
             }
 
-            async function loadEntries() {
-                const password = document.getElementById("master-password").value;
-                const response = await fetch("/vault/entries/list", {
-                    method: "POST",
+            const errorBox = document.getElementById("error-message");
+            const masterPassword = () => document.getElementById("master-password").value;
+
+            function showError(message) {
+                errorBox.textContent = message || "";
+            }
+
+            function logout() {
+                localStorage.removeItem("token");
+                window.location.href = "/";
+            }
+
+            // Shared request helper: attaches the JWT, sends JSON,
+            // and sends the user back to login if the token has expired.
+            async function api(url, method, body) {
+                const response = await fetch(url, {
+                    method: method,
                     headers: {
                         "Content-Type": "application/json",
                         "Authorization": "Bearer " + token
                     },
-                    body: JSON.stringify({ password: password })
+                    body: JSON.stringify(body)
                 });
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
+                if (response.status === 401 && data.error === "Unauthorized") {
+                    logout();  // JWT expired or invalid
+                }
+                return { ok: response.ok, data: data };
+            }
+
+            async function loadEntries() {
+                if (!masterPassword()) {
+                    showError("Enter your master password first.");
+                    return;
+                }
+                const { ok, data } = await api("/vault/entries/list", "POST", { password: masterPassword() });
+                if (!ok) {
+                    showError(data.error);
+                    return;
+                }
+                showError("");
+
                 const list = document.getElementById("entries-list");
                 list.innerHTML = "";
+                if (data.entries.length === 0) {
+                    list.textContent = "Vault is empty.";
+                    return;
+                }
                 data.entries.forEach(entry => {
                     const li = document.createElement("li");
-                    li.textContent = entry.service + " — " + entry.username;
+                    // textContent (not innerHTML) so a service name can never inject HTML
+                    li.textContent = entry.service + " — " + entry.username + " ";
+
+                    const del = document.createElement("button");
+                    del.textContent = "Delete";
+                    del.addEventListener("click", () => deleteEntry(entry.service, entry.username));
+                    li.appendChild(del);
+
                     list.appendChild(li);
                 });
             }
 
-            document.getElementById("dashboard-form").addEventListener("submit", async function(e) {
-                e.preventDefault();
-                
-                const token = localStorage.getItem("token");
-                const response = await fetch("/vault/entries", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": "Bearer " + token
-                    },
-                    body: JSON.stringify({
-                        password: document.getElementById("master-password").value,
-                        service: document.getElementById("service").value,
-                        username: document.getElementById("username").value,
-                        entry_password: document.getElementById("password").value
-                    })
-                });
-                
-                if (response.ok) {
-                    document.getElementById("error-message").textContent = "";
-                    loadEntries();
-                } else {
-                    const err = await response.json();
-                    document.getElementById("error-message").textContent = err.error;
+            async function deleteEntry(service, username) {
+                if (!confirm("Delete " + username + " on " + service + "?")) {
+                    return;
                 }
+                const url = "/vault/entries/" + encodeURIComponent(service);
+                const { ok, data } = await api(url, "DELETE", { password: masterPassword(), username: username });
+                if (!ok) {
+                    showError(data.error);
+                    return;
+                }
+                loadEntries();
+            }
+
+            document.getElementById("add-form").addEventListener("submit", async function (e) {
+                e.preventDefault();
+                if (!masterPassword()) {
+                    showError("Enter your master password first.");
+                    return;
+                }
+                const { ok, data } = await api("/vault/entries", "POST", {
+                    password: masterPassword(),
+                    service: document.getElementById("service").value,
+                    username: document.getElementById("username").value,
+                    entry_password: document.getElementById("password").value
+                });
+                if (!ok) {
+                    showError(data.error);
+                    return;
+                }
+                document.getElementById("add-form").reset();
+                loadEntries();
             });
-         </script>
+
+            document.getElementById("show-btn").addEventListener("click", loadEntries);
+            document.getElementById("logout-btn").addEventListener("click", logout);
+            document.getElementById("master-password").addEventListener("keydown", e => {
+                if (e.key === "Enter") loadEntries();
+            });
+        </script>
     </body>
 </html>

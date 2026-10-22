@@ -12,12 +12,12 @@
 2. **Master Password Brute-Force Attack**
    - Attacker has the encrypted vault file and attempts to guess the master password
    - **Defense:** Argon2id with RFC 9106 SECOND RECOMMENDED parameters (t=3, m=65536 KiB [64 MiB], p=4, 128-bit salt)
-   - **Cost:** ~0.5–1.0 second per guess on modern hardware; 100,000 guesses would take ~1.4 days on a single CPU core
+   - **Cost:** ~0.05 s per guess measured on a Ryzen 7 5800XT; a 14M-entry wordlist would take roughly 8 days on one machine
    - **Residual Risk:** Weak master passwords (< 12 chars, no mixed case/symbols) can be cracked faster; user education required
 
 3. **Plaintext Password Exposure During Use**
    - Attacker with code execution while the app runs could intercept passwords in memory
-   - **Defense:** All secrets wrapped in `zeroize`-friendly types; master password and decrypted vault contents cleared from memory immediately after use; no logging of plaintext passwords
+   - **Defense:** No plaintext passwords are logged. Python cannot reliably wipe secrets from memory (immutable strings, garbage collection), so in-memory exposure is accepted as a residual risk
    - **Residual Risk:** Out of scope — a compromised OS or debugger can always read running process memory; this is a system-level threat
 
 ### Secondary Threats (Out of Scope for v1)
@@ -34,7 +34,7 @@
 
 3. **Vault File Tampering (v1)**
    - Attacker modifies the encrypted vault file, hoping to trick the app into leaking secrets or crashing in a way that exposes data
-   - **Defense (added based on IACR 2026 research):** AEAD (Authenticated Encryption with Associated Data) ensures that any tampering with the ciphertext is detected; we bind the vault ID and item ID to the authentication tag so swapping items between vaults is impossible
+   - **Defense:** AEAD (Authenticated Encryption with Associated Data) ensures that any tampering with the ciphertext is detected; we bind the vault ID and item ID to the authentication tag so swapping items between vaults is impossible
    - **Status:** Partially in scope; we validate AEAD tags, but don't have a vault-wide integrity commitment yet (Phase 2)
 
 ---
@@ -78,16 +78,13 @@
 - **Algorithm:** Argon2id (IETF RFC 9106)
 - **Parameters:** t=3, m=65536 KiB (64 MiB), p=4, salt=128 bits, tag=256 bits
 - **Why:** Memory-hard and GPU-resistant; brute-force is prohibitively expensive
-- **Output:** 256-bit master key used to wrap the data key
+- **Output:** 256-bit key used directly as the AES-256-GCM key (envelope encryption with a separate data key is planned for v2)
 
 ### Encryption
 
 - **Primary Cipher:** AES-256-GCM
   - 256-bit key, 96-bit nonce (random), 128-bit authentication tag
   - NIST FIPS 197 approved; hardware-accelerated on modern CPUs
-- **Fallback Cipher:** ChaCha20-Poly1305 (for systems without AES-NI)
-  - XChaCha20-Poly1305 variant (192-bit nonce) for long-lived keys
-  - IETF RFC 7539 approved; constant-time on all CPUs
 
 ### Integrity & Binding
 
@@ -97,9 +94,7 @@
 
 ### Memory Management
 
-- All secrets (master password, derived keys, plaintext passwords) wrapped in zeroizable types
-- On-drop, buffers are overwritten with zeros before deallocation
-- No `String` types for secrets; `bytes` + `Zeroizing` wrappers only
+- Secrets are not logged or written to disk in plaintext. Memory zeroization isn’t feasible in pure Python and is listed under residual risks
 
 ### Audit Trail
 
@@ -127,10 +122,10 @@
 
 We *will* design the code so these can be added without rewriting the vault format:
 
-1. **Cipher Agility:** Header byte for cipher ID (1 = AES-256-GCM, 2 = ChaCha20-Poly1305, 3 = reserved for future)
-2. **KDF Agility:** Header byte for KDF ID (1 = Argon2id, 2 = PBKDF2-HMAC-SHA256 for FIPS-only builds)
-3. **KEK Interface:** `KeyEncryptionKey` trait with `wrap()` / `unwrap()` methods; default impl = Argon2id; can be swapped for AWS KMS, GCP KMS, TPM, Secure Enclave
-4. **Algorithm Upgrades:** Vault version field in header allows migration path if we need to deprecate old ciphers
+1. Cipher field: header stores the cipher name (aes-256-gcm)
+2. KDF parameters: header stores algorithm, salt and costs, so they can change without breaking existing vaults
+3. Version field: allows a migration path for future format changes
+4. Reserved wrapped_data_key field: placeholder for v2 envelope encryption
 
 ---
 
