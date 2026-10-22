@@ -8,6 +8,7 @@
          <h1>VaultKeep</h1>
         <!-- entries list -->
          <ul id="entries-list"></ul>
+         <p id="error-message"></p>
         <!-- add entry form with 4 inputs -->
          <form id="dashboard-form">
             <input type="text" id="service" placeholder="Service" required>
@@ -27,8 +28,8 @@
 
             async function loadEntries() {
                 const password = document.getElementById("master-password").value;
-                const response = await fetch("/vault/entries", {
-                    method: "GET",
+                const response = await fetch("/vault/entries/list", {
+                    method: "POST",
                     headers: {
                         "Content-Type": "application/json",
                         "Authorization": "Bearer " + token
@@ -38,9 +39,9 @@
                 const data = await response.json();
                 const list = document.getElementById("entries-list");
                 list.innerHTML = "";
-                data.services.forEach(service => {
+                data.entries.forEach(entry => {
                     const li = document.createElement("li");
-                    li.textContent = service;
+                    li.textContent = entry.service + " — " + entry.username;
                     list.appendChild(li);
                 });
             }
@@ -64,7 +65,11 @@
                 });
                 
                 if (response.ok) {
+                    document.getElementById("error-message").textContent = "";
                     loadEntries();
+                } else {
+                    const err = await response.json();
+                    document.getElementById("error-message").textContent = err.error;
                 }
             });
          </script>

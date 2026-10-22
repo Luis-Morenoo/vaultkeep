@@ -1,0 +1,13 @@
+services:
+  vaultkeep:
+    build: .
+    container_name: vaultkeep
+    ports:
+     - "5000:5000"
+    env_file: .env
+    volumes:
+     - vaultkeep-data:/root/.vaultkeep
+
+volumes:
+  vaultkeep-data:
+    name: vaultkeep-data

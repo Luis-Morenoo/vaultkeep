@@ -74,6 +74,15 @@ def init(password):
     )
 
 
+def _matches(vault, service, username=None):
+    """Return entries for a service, optionally narrowed to one username."""
+    return [
+        e
+        for e in vault.entries
+        if e.service == service and (username is None or e.username == username)
+    ]
+
+
 @cli.command()
 @click.argument("service")
 @click.option("--username", prompt=True, help="Username for the service")
@@ -92,6 +101,11 @@ def add(service, username, password, master_password):
     # Load the vault from disk using the master password
     vault = load_vault(master_password.encode("utf-8"), VAULT_PATH)
 
+    # Entries are unique on (service, username) - one service can hold many accounts
+    if _matches(vault, service, username):
+        click.echo(f"An entry for {username} on {service} already exists.")
+        return
+
     # Create a new VaultEntry with a random item_id
     entry = VaultEntry(
         item_id=generate_random_bytes(16),
@@ -100,10 +114,8 @@ def add(service, username, password, master_password):
         password=password,
     )
 
-    # Append the new entry to the vault
+    # Append the new entry and save the vault back to disk
     vault.entries.append(entry)
-
-    # Save the vault back to disk
     save_vault(vault, master_password.encode("utf-8"), VAULT_PATH)
 
     # Get last hash and append audit log entry
@@ -116,37 +128,39 @@ def add(service, username, password, master_password):
         prior_hash=prior_hash,
     )
 
-    # Print success message
-    click.echo("Success password added successfully")
+    click.echo(f"Entry for {username} on {service} added successfully.")
 
 
 @cli.command()
 @click.argument("service")
+@click.option("--username", default=None, help="Show only this account (optional)")
 @click.option(
     "--master-password",
     prompt="Master password",
     hide_input=True,
     help="Master password to unlock the vault",
 )
-def get(service, master_password):
-    """Retrieve a password entry from the vault."""
+def get(service, username, master_password):
+    """Retrieve the password entries for a service."""
 
     # Load the vault from the disk using the master password
     vault = load_vault(master_password.encode("utf-8"), VAULT_PATH)
-
-    # Get prior hash before the loop so both branches can use it
     prior_hash = get_last_hash(AUDIT_LOG_PATH)
 
-    # Search vault.entries for an entry where entry.service == service
-    for entry in vault.entries:
-        if entry.service == service:
-            click.echo(f"Username: {entry.username}")
-            click.echo(f"Password: {entry.password}")
-            append_audit_log(AUDIT_LOG_PATH, "get", service, True, prior_hash)
-            break
-    else:
+    matches = _matches(vault, service, username)
+    if not matches:
         click.echo("No entry found for this service")
         append_audit_log(AUDIT_LOG_PATH, "get", service, False, prior_hash)
+        return
+
+    # A service can hold several accounts - show each one
+    for i, entry in enumerate(matches):
+        if i:
+            click.echo("")
+        click.echo(f"Username: {entry.username}")
+        click.echo(f"Password: {entry.password}")
+
+    append_audit_log(AUDIT_LOG_PATH, "get", service, True, prior_hash)
 
 
 @cli.command(name="list")
@@ -169,7 +183,7 @@ def list_entries(master_password):
 
     # Loop through entries and display each service
     for entry in vault.entries:
-        click.echo(f"Service: {entry.service}")
+        click.echo(f"Service: {entry.service} ({entry.username})")
 
     # Get last hash and append audit log entry
     prior_hash = get_last_hash(AUDIT_LOG_PATH)
@@ -185,33 +199,44 @@ def list_entries(master_password):
 @cli.command()
 @click.argument("service")
 @click.option(
+    "--username",
+    default=None,
+    help="Account to delete (required when the service has more than one)",
+)
+@click.option(
     "--master-password",
     prompt="Master password",
     hide_input=True,
     help="Master password to unlock the vault",
 )
-def delete(service, master_password):
-    """Delete the service from the vault entries"""
+def delete(service, username, master_password):
+    """Delete an entry from the vault."""
 
     # Load the vault from the disk using the master password
     vault = load_vault(master_password.encode("utf-8"), VAULT_PATH)
+    prior_hash = get_last_hash(AUDIT_LOG_PATH)
 
-    # Find the entry where entry.service == service
-    for entry in vault.entries:
-        if entry.service == service:
-            vault.entries.remove(entry)
-            save_vault(vault, master_password.encode("utf-8"), VAULT_PATH)
-            prior_hash = get_last_hash(AUDIT_LOG_PATH)
-            append_audit_log(
-                AUDIT_LOG_PATH, "delete", entry.item_id.hex(), True, prior_hash
-            )
-            click.echo(f"Entry for {service} deleted successfully.")
-            break
-    else:
-        prior_hash = get_last_hash(AUDIT_LOG_PATH)
+    matches = _matches(vault, service, username)
+    if not matches:
         append_audit_log(AUDIT_LOG_PATH, "delete", service, False, prior_hash)
         click.echo(f"No entry found for {service}")
+        return
 
+    # Several accounts and no username given - refuse rather than guess
+    if username is None and len(matches) > 1:
+        names = ", ".join(e.username for e in matches)
+        append_audit_log(AUDIT_LOG_PATH, "delete", service, False, prior_hash)
+        click.echo(
+            f"{service} has {len(matches)} accounts ({names}). "
+            "Use --username to choose one."
+        )
+        return
+
+    entry = matches[0]
+    vault.entries.remove(entry)
+    save_vault(vault, master_password.encode("utf-8"), VAULT_PATH)
+    append_audit_log(AUDIT_LOG_PATH, "delete", entry.item_id.hex(), True, prior_hash)
+    click.echo(f"Entry for {entry.username} on {service} deleted successfully.")
 
 if __name__ == "__main__":
     cli()

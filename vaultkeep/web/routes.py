@@ -53,7 +53,7 @@ def login():
     return jsonify({"token": token})
 
 
-@vault_bp.route("/vault/entries", methods=["GET"])
+@vault_bp.route("/vault/entries/list", methods=["POST"])
 @require_auth
 def get_entries(payload):
     # get master password from request JSON
@@ -68,7 +68,13 @@ def get_entries(payload):
     except ValueError:
         return jsonify({"error": "Invalid password"}), 401
 
-    return jsonify({"services": [entry.service for entry in vault.entries]})
+    return jsonify(
+        {
+            "entries": [
+                {"service": e.service, "username": e.username} for e in vault.entries
+            ]
+        }
+    )
 
 
 @vault_bp.route("/vault/entries", methods=["POST"])
@@ -96,6 +102,10 @@ def add_entries(payload):
         vault = load_vault(password.encode("utf-8"), VAULT_PATH)
     except ValueError:
         return jsonify({"error": "Invalid password"}), 401
+
+    # entries are unique on (service, username) - one service can hold many accounts
+    if any(e.service == service and e.username == username for e in vault.entries):
+        return jsonify({"error": f"Entry for {username} on {service} already exists"}), 409
 
     # create vault entry
     entry = VaultEntry(
@@ -129,21 +139,39 @@ def delete_entry(payload, service):
     except ValueError:
         return jsonify({"error": "Invalid password"}), 401
 
-    # loop through entries - find matching service, remove it, save, return 200
-    for entry in vault.entries:
-        if entry.service == service:
-            vault.entries.remove(entry)
-            save_vault(vault, password.encode("utf-8"), VAULT_PATH)
-            return jsonify({"message": "Entry deleted successfully"}), 200
-    else:
+    # optional username narrows the match when a service has several accounts
+    username = data.get("username")
+    matches = [
+        e
+        for e in vault.entries
+        if e.service == service and (username is None or e.username == username)
+    ]
+
+    if not matches:
         return jsonify({"error": "Entry not found"}), 404
+
+    if username is None and len(matches) > 1:
+        names = [e.username for e in matches]
+        return (
+            jsonify(
+                {
+                    "error": f"{service} has multiple accounts - include a username",
+                    "usernames": names,
+                }
+            ),
+            409,
+        )
+
+    vault.entries.remove(matches[0])
+    save_vault(vault, password.encode("utf-8"), VAULT_PATH)
+    return jsonify({"message": "Entry deleted successfully"}), 200
 
 
 @vault_bp.route("/")
 def index():
     return render_template("login.html")
 
+
 @vault_bp.route("/dashboard")
 def dashboard():
     return render_template("dashboard.html")
-
