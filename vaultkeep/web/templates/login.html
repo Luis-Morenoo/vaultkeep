@@ -1,40 +1,16 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
     <head>
-        <!-- metadata, title, styles go here -->
-         <title>VaultKeep Login</title>
+        <meta charset="utf-8">
+        <title>VaultKeep Login</title>
+        <!-- Script lives in /static so the Content-Security-Policy can forbid inline code -->
+        <script src="{{ url_for('static', filename='login.js') }}" defer></script>
     </head>
     <body>
-        <!-- visible content goes here -->
-         <form id="login-form">
-            <input type="password" id="password" placeholder="Master Password" required>
+        <form id="login-form">
+            <input type="password" id="password" placeholder="Master Password" autocomplete="current-password" required>
             <button type="submit">Unlock Vault</button>
-         </form>
-         <p id="error-message"></p>
-         
-         <script>
-            document.getElementById("login-form").addEventListener("submit", async function(e) {
-                e.preventDefault(); // prevent page refresh
-
-                const password = document.getElementById("password").value;
-
-                // fetch here
-                fetch("/auth/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ password: password })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.token) {
-                        // data.token contains the JWT
-                        localStorage.setItem("token", data.token);
-                        window.location.href = "/dashboard"; // redirect
-                    } else {
-                        document.getElementById("error-message").textContent = "Invalid password. Try again.";
-                    }
-                })
-            });
-         </script>
+        </form>
+        <p id="error-message"></p>
     </body>
 </html>

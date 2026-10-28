@@ -1,116 +1,236 @@
-""" Vault handles reading and writing encrypted vault files to disk."""
+"""Vault handles reading and writing encrypted vault files to disk.
 
+Format v2 (current):
+  * The header is authenticated. A fixed key-check value is encrypted with the
+    vault key, using the canonical header as associated data. Unlocking checks it
+    first, so a wrong password fails even for an empty vault, and changing any
+    header field (vault_id, KDF settings, cipher, version) is detected.
+  * Each entry's associated data is vault_id || item_id || service, so service
+    names can't be swapped between entries without decryption failing.
+Format v1 (legacy) is still readable and is upgraded to v2 on the next save.
+"""
+
+import base64
+import binascii
+import hmac
 import json
 import os
-import base64
-from .models import VaultHeader, VaultEntry, VaultFile, AuditLogEntry, KDFParameters
+import tempfile
+
+from .models import VaultHeader, VaultEntry, VaultFile, KDFParameters
 from .kdf import derive_key
 from .crypto import encrypt, decrypt
 
+MAGIC = b"VKEP"
+CURRENT_VERSION = 2
+SUPPORTED_VERSIONS = (1, 2)
+SUPPORTED_CIPHER = "aes-256-gcm"
+KEY_CHECK_PLAINTEXT = b"vaultkeep-key-check-v2"
+
+WRONG_PASSWORD = "Wrong master password, or the vault file has been modified"  # nosec B105 - user-facing error text, not a credential
+
+
+# ---------- encoding helpers ----------
+
+def _b64(data: bytes) -> str:
+    """Encode bytes as a base64 string for JSON."""
+    return base64.b64encode(data).decode("utf-8")
+
+
+def _unb64(text: str) -> bytes:
+    """Decode a base64 string, rejecting anything that isn't strictly valid base64."""
+    return base64.b64decode(text, validate=True)
+
+
+# ---------- associated data (what each GCM tag protects besides the ciphertext) ----------
+
+def _header_aad(header: VaultHeader) -> bytes:
+    """Canonical bytes of every header field except the key check itself.
+    sort_keys + fixed separators make the encoding identical on every save and load."""
+    fields = {
+        "magic": _b64(header.magic),
+        "version": header.version,
+        "cipher": header.cipher,
+        "vault_id": _b64(header.vault_id),
+        "wrapped_data_key": _b64(header.wrapped_data_key),
+        "kdf_params": {
+            "algorithm": header.kdf_params.algorithm,
+            "salt": _b64(header.kdf_params.salt),
+            "time_cost": header.kdf_params.time_cost,
+            "memory_cost": header.kdf_params.memory_cost,
+            "parallelism": header.kdf_params.parallelism,
+        },
+    }
+    return b"VKEP-header-v2|" + json.dumps(fields, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _entry_aad(version: int, vault_id: bytes, item_id: bytes, service: str) -> bytes:
+    """v2 binds the service name; v1 only bound vault_id and item_id.
+    vault_id and item_id are fixed 16 bytes, so appending the service is unambiguous."""
+    if version >= 2:
+        return b"VKEP-entry-v2|" + vault_id + item_id + service.encode("utf-8")
+    return vault_id + item_id
+
+
+# ---------- save ----------
+
 def save_vault(vault: VaultFile, password: bytes, path: str) -> None:
-    """ Save the given vault to disk at the specified path, encrypting the entries with a key derived from the password. 
-    The vault header is stored in plaintext at the beginning of the file, while the entries are stored encrypted in the 
-    vault data following the header. """
+    """Encrypt the vault with a key derived from the password and write it to disk.
+    Always writes the current format (v2), which upgrades v1 vaults automatically."""
 
-    # Derive the KEK from the password and KDF parameters in the vault header
-    kek = derive_key(password, vault.header.kdf_params)
+    header = vault.header
+    header.version = CURRENT_VERSION
 
-    # Build a dictionary representing the vault as JSON-serializable data
+    # Derive the vault key from the password (derive_key also validates the KDF settings)
+    kek = derive_key(password, header.kdf_params)
+
+    # Fresh key check every save: encrypt a known value with the whole header as associated data
+    header.key_check_nonce, header.key_check = encrypt(kek, KEY_CHECK_PLAINTEXT, _header_aad(header))
+
     vault_dict = {
         "header": {
-            "magic": base64.b64encode(vault.header.magic).decode('utf-8'),
-            "version": vault.header.version,
-            "cipher": vault.header.cipher,
-            "vault_id": base64.b64encode(vault.header.vault_id).decode('utf-8'),
-            "wrapped_data_key": base64.b64encode(vault.header.wrapped_data_key).decode('utf-8'),
+            "magic": _b64(header.magic),
+            "version": header.version,
+            "cipher": header.cipher,
+            "vault_id": _b64(header.vault_id),
+            "wrapped_data_key": _b64(header.wrapped_data_key),
             "kdf_params": {
-                "algorithm": vault.header.kdf_params.algorithm,
-                "salt": base64.b64encode(vault.header.kdf_params.salt).decode('utf-8'),
-                "time_cost": vault.header.kdf_params.time_cost,
-                "memory_cost": vault.header.kdf_params.memory_cost,
-                "parallelism": vault.header.kdf_params.parallelism
-            }
+                "algorithm": header.kdf_params.algorithm,
+                "salt": _b64(header.kdf_params.salt),
+                "time_cost": header.kdf_params.time_cost,
+                "memory_cost": header.kdf_params.memory_cost,
+                "parallelism": header.kdf_params.parallelism,
+            },
+            "key_check_nonce": _b64(header.key_check_nonce),
+            "key_check": _b64(header.key_check),
         },
-        "entries": [] 
+        "entries": [],
     }
-    
+
     for entry in vault.entries:
-        # Use the vault_id and entry_id as associated data to ensure the encrypted data is tied to this specific vault and entry
-        aad = vault.header.vault_id + entry.item_id
-
-        # Build the plaintext payload for this entry, which includes the username, password, and optional notes, and encrypt it with the KEK and associated data
-        payload = {
-            "username" : entry.username,
-            "password" : entry.password,
-            "notes" : entry.notes,
-        }
-
-        # serializing the payload dict to bytes so it can be encrypted - we use JSON for simplicity and readability, but other formats could be used as well
-        plaintext = json.dumps(payload).encode('utf-8')
-        # The encrypt function returns a tuple of (nonce, ciphertext), which allows the nonce to be stored alongside the encrypted data for later decryption
+        # Username, password and notes are encrypted together as one payload
+        payload = {"username": entry.username, "password": entry.password, "notes": entry.notes}
+        plaintext = json.dumps(payload).encode("utf-8")
+        aad = _entry_aad(header.version, header.vault_id, entry.item_id, entry.service)
         nonce, ciphertext = encrypt(kek, plaintext, aad)
-
-        # Append the encrypted entry data to the vault dictionary, encoding the item_id, nonce, and ciphertext as base64 strings for JSON serialization
         vault_dict["entries"].append({
-            "item_id" : base64.b64encode(entry.item_id).decode('utf-8'),
-            "service" : entry.service,
-            "nonce" : base64.b64encode(nonce).decode('utf-8'),
-            "ciphertext" : base64.b64encode(ciphertext).decode('utf-8'),
+            "item_id": _b64(entry.item_id),
+            "service": entry.service,
+            "nonce": _b64(nonce),
+            "ciphertext": _b64(ciphertext),
         })
 
-    # Write the vault dictionary as JSON to the specified file path, with indentation for readability
-    with open(path, "w") as f:
-        json.dump(vault_dict, f, indent=2)
-    
+    _atomic_write_json(path, vault_dict)
+
+
+def _atomic_write_json(path: str, data: dict) -> None:
+    """Write to a private temp file in the same folder, then swap it into place.
+    A crash mid-write leaves the old vault intact instead of a half-written one."""
+    directory = os.path.dirname(os.path.abspath(path))
+    fd, tmp_path = tempfile.mkstemp(prefix=".vault-", suffix=".tmp", dir=directory)  # created with 0600 on POSIX
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)  # atomic on the same file system
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+
+
+# ---------- load ----------
+
 def load_vault(password: bytes, path: str) -> VaultFile:
-    """ Load the vault from disk at the specified path, decrypting the entries with a key derived from the password. 
-    The vault header is read from the beginning of the file, while the entries are read from the vault data following the header. """
+    """Read the vault from disk, verify the password and integrity, and decrypt every entry.
+    Raises ValueError for a wrong password, a modified file, or a malformed file."""
 
-    # Read the Json from disk
-    with open(path, "r") as f:
-        data = json.load(f)
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)  # JSONDecodeError is a ValueError
 
-    # Reconstruct KDFParamaters from the JSON - we need this to derive the KEK before we can reconstruct the VaultHeader, which contains the KDF parameters in its header field
-    kdf_params = KDFParameters(
-        algorithm = data["header"]["kdf_params"]["algorithm"],
-        salt = base64.b64decode(data["header"]["kdf_params"]["salt"]), 
-        time_cost = data["header"]["kdf_params"]["time_cost"],
-        memory_cost = data["header"]["kdf_params"]["memory_cost"],
-        parallelism = data["header"]["kdf_params"]["parallelism"]
-    )
+    try:
+        header, raw_entries = _parse(data)
+    except (KeyError, TypeError, binascii.Error) as exc:
+        raise ValueError("Vault file is malformed") from exc
 
-    # Reconstruct VaultHeader from the JSON - we need this to derive the KEK before we can reconstruct the VaultFile, which contains the header field
-    vault_header = VaultHeader(
-        magic = base64.b64decode(data["header"]["magic"]),
-        version = data["header"]["version"],
-        kdf_params = kdf_params,
-        cipher = data["header"]["cipher"],
-        vault_id = base64.b64decode(data["header"]["vault_id"]),
-        wrapped_data_key = base64.b64decode(data["header"]["wrapped_data_key"])
-    )
+    # Derive the key (derive_key rejects unsafe or absurd KDF settings before doing any work)
+    kek = derive_key(password, header.kdf_params)
 
-    # Derive the KEK from the password and KDF parameters in the vault header - we need this to decrypt the entries before we can reconstruct the VaultFile, which contains the list of entries
-    kek = derive_key(password, vault_header.kdf_params)
-
-    # Reconstruct the list of VaultEntry objects from the JSON, decrypting each entry's ciphertext with the KEK and associated data (vault_id + item_id) - we need this to reconstruct the VaultFile, which contains the list of entries
-    entries = []
-    # We loop through each entry in the JSON data, decode the item_id, nonce, and ciphertext from base64, construct the associated data by concatenating the vault_id and item_id, decrypt the ciphertext to get the plaintext payload, parse the payload as JSON to extract the username, password, and notes, and then create a VaultEntry object with this data and append it to the list of entries.
-    for entry_data in data["entries"]:
-        item_id = base64.b64decode(entry_data["item_id"])
-        nonce = base64.b64decode(entry_data["nonce"])
-        ciphertext = base64.b64decode(entry_data["ciphertext"])
-        aad = vault_header.vault_id + item_id
-        plaintext = decrypt(kek, nonce, ciphertext, aad)
-        payload = json.loads(plaintext.decode('utf-8'))
-        entry = VaultEntry(
-            item_id = item_id,
-            service = entry_data["service"],
-            username = payload["username"],
-            password = payload["password"],
-            notes = payload.get("notes")
+    if header.version >= 2:
+        # Verify the password and every header field before touching any entry
+        try:
+            check = decrypt(kek, header.key_check_nonce, header.key_check, _header_aad(header))
+        except ValueError:
+            raise ValueError(WRONG_PASSWORD) from None
+        if not hmac.compare_digest(check, KEY_CHECK_PLAINTEXT):
+            raise ValueError(WRONG_PASSWORD)
+    elif not raw_entries:
+        # A v1 vault with no entries has nothing to decrypt, so the password can't be checked
+        raise ValueError(
+            "This vault uses the old v1 format and has no entries, so the master password "
+            "can't be verified. Delete it and run 'init' again."
         )
-        entries.append(entry)
-        
-    # Finally, we return a VaultFile object containing the reconstructed header and list of entries
-    return VaultFile(header=vault_header, entries=entries)
 
+    entries = []
+    for item_id, service, nonce, ciphertext in raw_entries:
+        aad = _entry_aad(header.version, header.vault_id, item_id, service)
+        try:
+            plaintext = decrypt(kek, nonce, ciphertext, aad)
+        except ValueError:
+            raise ValueError(WRONG_PASSWORD) from None
+        payload = json.loads(plaintext.decode("utf-8"))
+        entries.append(VaultEntry(
+            item_id=item_id,
+            service=service,
+            username=payload["username"],
+            password=payload["password"],
+            notes=payload.get("notes"),
+        ))
+
+    return VaultFile(header=header, entries=entries)
+
+
+def _parse(data: dict):
+    """Turn the JSON dictionary into a VaultHeader plus raw (still encrypted) entries,
+    checking the fixed fields so unknown formats fail early with a clear message."""
+    h = data["header"]
+
+    magic = _unb64(h["magic"])
+    if magic != MAGIC:
+        raise ValueError("Not a VaultKeep vault file")
+    version = h["version"]
+    if version not in SUPPORTED_VERSIONS:
+        raise ValueError(f"Unsupported vault version: {version}")
+    if h["cipher"] != SUPPORTED_CIPHER:
+        raise ValueError(f"Unsupported cipher: {h['cipher']}")
+
+    k = h["kdf_params"]
+    kdf_params = KDFParameters(
+        algorithm=k["algorithm"],
+        salt=_unb64(k["salt"]),
+        time_cost=k["time_cost"],
+        memory_cost=k["memory_cost"],
+        parallelism=k["parallelism"],
+    )
+
+    header = VaultHeader(
+        magic=magic,
+        version=version,
+        kdf_params=kdf_params,
+        cipher=h["cipher"],
+        vault_id=_unb64(h["vault_id"]),
+        wrapped_data_key=_unb64(h.get("wrapped_data_key", "")),
+        key_check_nonce=_unb64(h["key_check_nonce"]) if version >= 2 else b"",
+        key_check=_unb64(h["key_check"]) if version >= 2 else b"",
+    )
+    if len(header.vault_id) != 16:
+        raise ValueError("Vault file is malformed")
+
+    raw_entries = []
+    for e in data["entries"]:
+        item_id = _unb64(e["item_id"])
+        if len(item_id) != 16 or not isinstance(e["service"], str):
+            raise ValueError("Vault file is malformed")
+        raw_entries.append((item_id, e["service"], _unb64(e["nonce"]), _unb64(e["ciphertext"])))
+    return header, raw_entries

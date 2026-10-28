@@ -32,10 +32,10 @@
    - **Why out of scope:** At that point, the threat model is political/legal, not technical
    - **Principle:** We encrypt, we don't hide
 
-3. **Vault File Tampering (v1)**
+3. **Vault File Tampering**
    - Attacker modifies the encrypted vault file, hoping to trick the app into leaking secrets or crashing in a way that exposes data
-   - **Defense:** AEAD (Authenticated Encryption with Associated Data) ensures that any tampering with the ciphertext is detected; we bind the vault ID and item ID to the authentication tag so swapping items between vaults is impossible
-   - **Status:** Partially in scope; we validate AEAD tags, but don't have a vault-wide integrity commitment yet (Phase 2)
+   - **Defense (format v2):** the header is authenticated by a key-check value encrypted with the whole header as associated data, so a wrong password or any header edit is rejected before entries are touched, even for an empty vault. Each entry's AEAD tag covers `vault_id || item_id || service`, so ciphertexts and service names can't be swapped. KDF settings are bounds-checked before any key derivation, so a tampered header can't request absurd memory or time costs.
+   - **Residual risk:** deleting a whole entry, or replacing the file with an older valid copy (rollback), isn't detected; that needs a vault-wide commitment anchored outside the file
 
 ---
 
@@ -88,9 +88,11 @@
 
 ### Integrity & Binding
 
-- **AEAD Binding:** vault_id || item_id included as Associated Data (AAD) in every encryption
-  - Prevents cut-and-paste attacks between items or vaults
-  - Tag is verified before any decryption attempt
+- **Header key check (v2):** a fixed value encrypted with the vault key, using the canonical header as AAD; verified first on every unlock
+- **Entry binding (v2):** `vault_id || item_id || service` as AAD on every entry
+  - Prevents cut-and-paste attacks between items or vaults, and relabelling entries
+  - Tag is verified before any plaintext is returned
+- **Migration:** v1 vaults (AAD `vault_id || item_id`, no key check) still load and are rewritten as v2 on the next save; an empty v1 vault is refused because its password can't be verified
 
 ### Memory Management
 
@@ -124,7 +126,7 @@ We *will* design the code so these can be added without rewriting the vault form
 
 1. Cipher field: header stores the cipher name (aes-256-gcm)
 2. KDF parameters: header stores algorithm, salt and costs, so they can change without breaking existing vaults
-3. Version field: allows a migration path for future format changes
+3. Version field: allows a migration path for future format changes (used for the v1 → v2 upgrade)
 4. Reserved wrapped_data_key field: placeholder for v2 envelope encryption
 
 ---

@@ -5,15 +5,25 @@ import os
 import sys
 from .vault import load_vault, save_vault
 from .models import VaultFile, VaultHeader, VaultEntry, KDFParameters
-from .utils import generate_random_bytes, build_aad
+from .utils import generate_random_bytes
 from .audit import append_audit_log, get_last_hash
 
-VAULT_PATH = os.path.expanduser(
-    "~/.vaultkeep/vault.json"
-)  # Default path to the vault file in the user's home directory
-AUDIT_LOG_PATH = os.path.expanduser(
-    "~/.vaultkeep/audit.log"
-)  # Default path to the audit log file in the user's home directory
+# Vault folder: ~/.vaultkeep by default, overridable with VAULTKEEP_HOME
+VAULT_DIR = os.path.expanduser(os.environ.get("VAULTKEEP_HOME", "~/.vaultkeep"))
+VAULT_PATH = os.path.join(VAULT_DIR, "vault.json")  # Encrypted vault file
+AUDIT_LOG_PATH = os.path.join(VAULT_DIR, "audit.log")  # Hash-chained audit log
+
+
+def _unlock(master_password):
+    """Load the vault, turning errors into clean CLI messages instead of tracebacks.
+    Failed unlocks are written to the audit log."""
+    if not os.path.exists(VAULT_PATH):
+        raise click.ClickException("No vault found. Run 'init' first.")
+    try:
+        return load_vault(master_password.encode("utf-8"), VAULT_PATH)
+    except ValueError as exc:
+        append_audit_log(AUDIT_LOG_PATH, "unlock", "vault", False, get_last_hash(AUDIT_LOG_PATH))
+        raise click.ClickException(str(exc))
 
 
 @click.group()
@@ -60,12 +70,13 @@ def init(password):
     save_vault(vault, password.encode("utf-8"), VAULT_PATH)
 
     # Append an audit log entry for the vault initialization
+    # (chains onto any existing log instead of restarting at the genesis hash)
     append_audit_log(
         path=AUDIT_LOG_PATH,
         operation="init",
         item_id="vault",
         success=True,
-        prior_hash="0" * 64,
+        prior_hash=get_last_hash(AUDIT_LOG_PATH),
     )
 
     # Print success message
@@ -99,7 +110,7 @@ def add(service, username, password, master_password):
     """Add a new password entry to the vault."""
 
     # Load the vault from disk using the master password
-    vault = load_vault(master_password.encode("utf-8"), VAULT_PATH)
+    vault = _unlock(master_password)
 
     # Entries are unique on (service, username) - one service can hold many accounts
     if _matches(vault, service, username):
@@ -144,7 +155,7 @@ def get(service, username, master_password):
     """Retrieve the password entries for a service."""
 
     # Load the vault from the disk using the master password
-    vault = load_vault(master_password.encode("utf-8"), VAULT_PATH)
+    vault = _unlock(master_password)
     prior_hash = get_last_hash(AUDIT_LOG_PATH)
 
     matches = _matches(vault, service, username)
@@ -174,7 +185,7 @@ def list_entries(master_password):
     """List the services in the vault entries"""
 
     # Load the vault from the disk using the master password
-    vault = load_vault(master_password.encode("utf-8"), VAULT_PATH)
+    vault = _unlock(master_password)
 
     # Check if vault.entries is empty, if so print "Vault is empty"
     if not vault.entries:
@@ -213,7 +224,7 @@ def delete(service, username, master_password):
     """Delete an entry from the vault."""
 
     # Load the vault from the disk using the master password
-    vault = load_vault(master_password.encode("utf-8"), VAULT_PATH)
+    vault = _unlock(master_password)
     prior_hash = get_last_hash(AUDIT_LOG_PATH)
 
     matches = _matches(vault, service, username)

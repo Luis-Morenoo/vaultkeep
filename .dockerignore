@@ -1,8 +1,22 @@
+# Secrets and local data
+.env
+.env.*
+vault.json
+audit.log
+*.backup
+tampered*.json
+security-reports/
+
+# Tooling and local state
+.git/
+.github/
+.vscode/
 venv/
 __pycache__/
-.git/
 .pytest_cache/
 .mypy_cache/
-vault.json
-*.backup
-.env
+
+# Not needed in the image (the Dockerfile only copies vaultkeep/ anyway)
+tests/
+attacks/
+scripts/

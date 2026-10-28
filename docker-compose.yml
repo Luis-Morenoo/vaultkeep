@@ -3,10 +3,18 @@ services:
     build: .
     container_name: vaultkeep
     ports:
-     - "5000:5000"
+      # Bound to localhost only: the UI is plain HTTP and must not be reachable from the LAN
+      - "127.0.0.1:5000:5000"
     env_file: .env
     volumes:
-     - vaultkeep-data:/root/.vaultkeep
+      - vaultkeep-data:/home/vaultkeep/.vaultkeep
+    read_only: true          # container file system is immutable; only the volume and /tmp are writable
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   vaultkeep-data:

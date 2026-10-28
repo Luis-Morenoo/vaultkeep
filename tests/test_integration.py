@@ -50,3 +50,28 @@ def test_cli_multiple_accounts_per_service(tmp_path, monkeypatch):
     runner.invoke(cli_module.cli, ["delete", "gmail", "--username", "coco", *mp])
     result = runner.invoke(cli_module.cli, ["get", "gmail", *mp])
     assert "Username: luis" in result.output and "coco" not in result.output
+
+
+def test_cli_wrong_password_is_a_clean_error_and_is_audited(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli_module, "VAULT_PATH", str(tmp_path / "vault.json"))
+    monkeypatch.setattr(cli_module, "AUDIT_LOG_PATH", str(tmp_path / "audit.log"))
+    runner = CliRunner()
+
+    runner.invoke(cli_module.cli, ["init", "--password", "Test123"])
+
+    # empty vault + wrong password: refused, no traceback, exit code 1
+    result = runner.invoke(cli_module.cli, ["list", "--master-password", "WrongPass"])
+    assert result.exit_code == 1
+    assert "Wrong master password" in result.output
+    assert "Traceback" not in result.output
+
+    with open(tmp_path / "audit.log") as f:
+        last = f.readlines()[-1]
+    assert '"operation": "unlock"' in last and '"success": false' in last
+
+
+def test_cli_without_a_vault_says_run_init(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli_module, "VAULT_PATH", str(tmp_path / "vault.json"))
+    monkeypatch.setattr(cli_module, "AUDIT_LOG_PATH", str(tmp_path / "audit.log"))
+    result = CliRunner().invoke(cli_module.cli, ["list", "--master-password", "x"])
+    assert result.exit_code == 1 and "init" in result.output

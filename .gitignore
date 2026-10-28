@@ -9,13 +9,20 @@ __pycache__/
 dist/
 build/
 
-# VaultKeep - never commit actual vault data
-~/.vaultkeep/
+# VaultKeep - never commit vault data, logs or attack-simulation output
 vault.json
+audit.log
+*.backup
+tampered*.json
+.vault-*.tmp
 
-# Environment variables
+# Environment variables (secrets) - the template is the only exception
 .env
 .env.*
+!.env.example
+
+# Local scanner output
+security-reports/
 
 # VS Code
 .vscode/

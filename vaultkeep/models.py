@@ -21,11 +21,13 @@ class VaultHeader:
     to derive the master key and decrypt the vault data."""
 
     magic: bytes = b"VKEP"                                 # A magic number to identify the file format and check for corruption - always "VKEP" for us
-    version: int = 1                                       # The vault file format version - allows for future changes while maintaining backward compatibility
+    version: int = 2                                       # The vault file format version - v2 adds the header key check and binds service names to each entry
     kdf_params: KDFParameters = None                       # The parameters used for key derivation, stored in the header so the master key can be re-derived correctly even if defaults change in future versions
     cipher: str = "aes-256-gcm"                            # The encryption algorithm used for the vault data - always aes-256-gcm for us
     vault_id: bytes = field(default_factory=bytes)         # 16 random bytes unique to this vault - used in key derivation and as associated data for encryption
     wrapped_data_key: bytes = field(default_factory=bytes) # The vault's data key, encrypted with the master key derived from the user's password
+    key_check_nonce: bytes = field(default_factory=bytes)  # v2: nonce for the key check below
+    key_check: bytes = field(default_factory=bytes)        # v2: a known value encrypted with the vault key, with the whole header as associated data - proves the password is right (even for an empty vault) and that no header field was changed
 
     def __post_init__(self):                  # Ensure kdf_params is initialized to a default if not provided                    
         if self.kdf_params is None:
