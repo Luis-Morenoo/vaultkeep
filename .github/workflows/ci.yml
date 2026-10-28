@@ -32,6 +32,9 @@ jobs:
 
   security:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read   # gitleaks lists a PR's commits through the API
     steps:
       - name: Checkout full history
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
