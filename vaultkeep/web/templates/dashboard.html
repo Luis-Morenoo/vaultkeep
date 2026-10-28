@@ -10,6 +10,7 @@
         <h1>VaultKeep</h1>
 
         <!-- master password: needed to decrypt for list, add and delete -->
+        <label for="master-password">Master password</label>
         <input type="password" id="master-password" placeholder="Master password" autocomplete="current-password" required>
         <button id="show-btn">Show entries</button>
         <button id="logout-btn">Logout</button>
@@ -19,8 +20,11 @@
 
         <h3>Add entry</h3>
         <form id="add-form">
+            <label for="service">Service</label>
             <input type="text" id="service" placeholder="Service" required>
+            <label for="username">Username</label>
             <input type="text" id="username" placeholder="Username" required>
+            <label for="password">Password</label>
             <input type="password" id="password" placeholder="Password" autocomplete="new-password" required>
             <button type="submit">Add Entry</button>
         </form>

@@ -24,4 +24,6 @@ EXPOSE 5000
 
 # gunicorn instead of Flask's development server. One worker because the rate
 # limiter keeps its counters in memory; threads let requests overlap.
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "--access-logfile", "-", "vaultkeep.web.app:create_app()"]
+# --no-control-socket: gunicorn 25+ opens a runtime control socket under $HOME, which the
+# read-only container can't write, and nothing here uses it.
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "--access-logfile", "-", "--no-control-socket", "vaultkeep.web.app:create_app()"]

@@ -9,8 +9,8 @@ for wf in .github/workflows/*.yml; do
     repo=${ref%@*}; tag=${ref#*@}
     # ^{} dereferences annotated tags to the commit they point at
     sha=$(git ls-remote "https://github.com/$repo" "refs/tags/$tag^{}" | cut -f1)
-    [ -z "$sha" ] && sha=$(git ls-remote "https://github.com/$repo" "refs/tags/$tag" | cut -f1)
-    if [ -z "$sha" ]; then echo "!! could not resolve $ref" >&2; exit 1; fi
+    [[ -z "$sha" ]] && sha=$(git ls-remote "https://github.com/$repo" "refs/tags/$tag" | cut -f1)
+    if [[ -z "$sha" ]]; then echo "!! could not resolve $ref" >&2; exit 1; fi
     sed -i "s#uses: $repo@$tag\$#uses: $repo@$sha \# $tag#" "$wf"
     echo "pinned $repo@$tag -> $sha"
   done
