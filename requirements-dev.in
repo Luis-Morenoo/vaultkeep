@@ -1,0 +1,9 @@
+# Development, test and security tools. Edit THIS file, then run: bash scripts/lock-deps.sh
+# requirements-dev.txt is the full hashed lockfile (runtime + tools) that CI installs.
+-c requirements.txt
+-r requirements.in
+bandit==1.9.4
+black==26.10.1
+pip-audit==2.10.1
+pytest==9.2.0
+pytest-cov==7.1.0

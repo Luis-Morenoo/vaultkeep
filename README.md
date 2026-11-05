@@ -1,6 +1,10 @@
 # VaultKeep
 
-![CI](https://github.com/Luis-Morenoo/vaultkeep/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/Luis-Morenoo/vaultkeep/actions/workflows/ci.yml/badge.svg)](https://github.com/Luis-Morenoo/vaultkeep/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Luis-Morenoo/vaultkeep/actions/workflows/codeql.yml/badge.svg)](https://github.com/Luis-Morenoo/vaultkeep/actions/workflows/codeql.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=Luis-Morenoo_vaultkeep&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Luis-Morenoo_vaultkeep)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Luis-Morenoo_vaultkeep&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Luis-Morenoo_vaultkeep)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A local-first password manager in Python, built to practice secure design end to end: threat modeling first, then authenticated encryption, memory-hard key derivation, a tamper-evident audit log, a JWT-protected web API — and finally attacking it to check the defenses hold.
 
@@ -61,7 +65,7 @@ python -m attacks.timing_attack
 
 ```bash
 python -m venv venv && source venv/bin/activate   # Windows Git Bash: source venv/Scripts/activate
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.txt
 
 python -m vaultkeep.cli init                       # create a vault (asks for a master password twice)
 python -m vaultkeep.cli add gmail                  # prompts for username, password, master password
@@ -108,13 +112,19 @@ The current format is **v2**. Vaults created by earlier versions (v1) still open
 ## Development
 
 ```bash
-pip install -r requirements-dev.txt     # runtime + test, lint and security tools
+pip install --require-hashes -r requirements-dev.txt   # runtime + test, lint and security tools
 pytest tests/ -v
 pip install pre-commit && pre-commit install   # gitleaks, Bandit and black before every commit
 bash scripts/security-scan.sh --fresh   # gitleaks, trufflehog, Bandit, Semgrep, pip-audit (needs Docker)
 ```
 
-The tests cover encryption round-trips, wrong-key and tampering rejection, the header key check, service-name binding, KDF bounds, v1 → v2 migration, atomic writes, the hash chain, CLI flows via Click's `CliRunner`, and the web layer: the fail-closed signing key, security headers, token binding and rate limiting. GitHub Actions runs the tests plus gitleaks, Bandit and pip-audit on every push; actions are pinned to commit SHAs and Dependabot keeps dependencies current.
+Dependencies are hash-locked. Edit `requirements.in` / `requirements-dev.in`, then run
+`bash scripts/lock-deps.sh` to regenerate `requirements.txt` / `requirements-dev.txt`, where every
+transitive dependency is pinned with its sha256. CI and the Docker image install with
+`--require-hashes --only-binary :all:`, so a tampered package, or one that would run a `setup.py`
+at install time, fails the install.
+
+The tests cover encryption round-trips, wrong-key and tampering rejection, the header key check, service-name binding, KDF bounds, v1 → v2 migration, atomic writes, the hash chain, CLI flows via Click's `CliRunner`, and the web layer: the fail-closed signing key, security headers, token binding and rate limiting. GitHub Actions runs the tests plus gitleaks, Bandit and pip-audit on every push, CodeQL (security-extended queries for Python and JavaScript) on every push and weekly, and SonarCloud with test coverage. Actions are pinned to commit SHAs, dependencies are hash-locked, and Dependabot keeps both current.
 
 ## Project layout
 
