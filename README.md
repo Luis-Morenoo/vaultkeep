@@ -153,6 +153,7 @@ Documented on purpose — each is a deliberate scope decision or a known gap:
 - **Web actions aren't audit-logged.** The hash-chained log records CLI operations only.
 - **Audit chain is tamper-evident, not tamper-proof.** Someone with write access could rewrite the entire log consistently.
 - **Local, single-user only.** Plain HTTP on `localhost`; not designed to be exposed to a network.
+- **No browser-side tests.** The dashboard JavaScript is checked by CodeQL and SonarCloud but has no unit tests, so the coverage figure covers the Python code only.
 - **Re-entering the master password.** The JWT proves login but doesn't carry the decryption key, so each vault request re-sends the master password and re-derives the key.
 
 ## Roadmap (v2)
