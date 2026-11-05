@@ -9,7 +9,7 @@
 
 ---
 
-I'm a junior software engineer with about two years of professional experience, mostly backend Java. Security is the newer part for me. I'm working on an MS in Computer Science with a cybersecurity concentration at Arizona State University. I've finished **CSE 548 (Advanced Computer Network Security)** and I'm currently taking **CSE 543 (Information Assurance & Security)**.
+I'm a junior software engineer with about two years and some change of professional experience, mostly backend Java. Security is the newer part for me. I'm working on an MS in Computer Science with a cybersecurity concentration at Arizona State University. I've finished **CSE 548 (Advanced Computer Network Security)** and I'm currently taking **CSE 543 (Information Assurance & Security)**.
 
 I wanted a project where I had to apply what I'm learning instead of just reading about it. So I built a password manager. Then I tried to break it. 😅
 
