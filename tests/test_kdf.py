@@ -10,7 +10,9 @@ def test_derive_key_is_32_bytes():
 
 
 def test_same_password_same_key():
-    assert derive_key(b"Test123", PARAMS) == derive_key(b"Test123", PARAMS)
+    first = derive_key(b"Test123", PARAMS)
+    second = derive_key(b"Test123", PARAMS)
+    assert first == second
 
 
 def test_correct_password_verifies():

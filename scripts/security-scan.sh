@@ -53,7 +53,7 @@ docker run --rm -v "$REPO:/src" semgrep/semgrep semgrep scan \
   --output /src/$OUT/semgrep.txt /src || status=1
 cat "$OUT/semgrep.txt"
 
-if [ "${1:-}" = "--fresh" ]; then
+if [[ "${1:-}" == "--fresh" ]]; then
   TMP=$(mktemp -d)
   echo "== fresh clone from origin into $TMP"
   git clone --quiet --no-single-branch "$(git remote get-url origin)" "$TMP/vaultkeep"
@@ -64,6 +64,6 @@ if [ "${1:-}" = "--fresh" ]; then
 fi
 
 echo
-[ $status -eq 0 ] && echo "RESULT: all scanners exited clean" \
+[[ $status -eq 0 ]] && echo "RESULT: all scanners exited clean" \
                   || echo "RESULT: at least one scanner reported findings - see $OUT/"
 exit $status

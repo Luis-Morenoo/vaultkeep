@@ -20,14 +20,20 @@ function logout() {
 // Shared request helper: attaches the JWT, sends JSON,
 // and sends the user back to login if the token has expired.
 async function api(url, method, body) {
-    const response = await fetch(url, {
-        method: method,
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + token
-        },
-        body: JSON.stringify(body)
-    });
+    let response;
+    try {
+        response = await fetch(url, {
+            method: method,
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + token
+            },
+            body: JSON.stringify(body)
+        });
+    } catch {
+        // Network failure (server down, connection dropped): report it instead of rejecting
+        return { ok: false, data: { error: "Can't reach the VaultKeep server." } };
+    }
     const data = await response.json().catch(() => ({}));
     if (response.status === 401 && data.error === "Unauthorized") {
         logout(); // JWT expired, invalid, or issued for another vault
@@ -77,7 +83,7 @@ async function deleteEntry(service, username) {
         showError(data.error);
         return;
     }
-    loadEntries();
+    await loadEntries();
 }
 
 document.getElementById("add-form").addEventListener("submit", async function (e) {
@@ -97,11 +103,13 @@ document.getElementById("add-form").addEventListener("submit", async function (e
         return;
     }
     document.getElementById("add-form").reset();
-    loadEntries();
+    await loadEntries();
 });
 
 document.getElementById("show-btn").addEventListener("click", loadEntries);
 document.getElementById("logout-btn").addEventListener("click", logout);
 document.getElementById("master-password").addEventListener("keydown", e => {
-    if (e.key === "Enter") loadEntries();
+    if (e.key === "Enter") {
+        loadEntries().catch(err => showError(err.message));
+    }
 });

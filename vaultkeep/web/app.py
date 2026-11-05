@@ -15,6 +15,8 @@ CONTENT_SECURITY_POLICY = (
 def create_app(config: dict | None = None) -> Flask:
     """Create the Flask app. Fails at startup if the signing key is missing or weak."""
 
+    # No CSRF tokens on purpose: the API authenticates with a Bearer JWT in the Authorization
+    # header, never a cookie, so a cross-site request carries no credentials to abuse.
     app = Flask(__name__)
 
     # Fail closed: get_secret_key() raises if VAULTKEEP_SECRET_KEY is missing or too short
