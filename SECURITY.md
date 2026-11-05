@@ -46,4 +46,4 @@ Out of scope, as described in [THREAT_MODEL.md](THREAT_MODEL.md):
 - An authenticated header (format v2) so wrong passwords and header edits are detected before any entry is decrypted
 - Short-lived HS256 JWTs for the web API, a signing key that must come from the environment, and rate limits on every route that accepts the master password
 
-Known limitations are listed in the [README](README.md#known-limitations).
+Known limitations are listed in the [README](README.md), under "Known limitations".

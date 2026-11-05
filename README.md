@@ -1,16 +1,41 @@
-# VaultKeep
+# 🔐 VaultKeep
 
 [![CI](https://github.com/Luis-Morenoo/vaultkeep/actions/workflows/ci.yml/badge.svg)](https://github.com/Luis-Morenoo/vaultkeep/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/Luis-Morenoo/vaultkeep/actions/workflows/codeql.yml/badge.svg)](https://github.com/Luis-Morenoo/vaultkeep/actions/workflows/codeql.yml)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=Luis-Morenoo_vaultkeep&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Luis-Morenoo_vaultkeep)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Luis-Morenoo_vaultkeep&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Luis-Morenoo_vaultkeep)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=Luis-Morenoo_vaultkeep&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=Luis-Morenoo_vaultkeep)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A local-first password manager in Python, built to practice secure design end to end: threat modeling first, then authenticated encryption, memory-hard key derivation, a tamper-evident audit log, a JWT-protected web API — and finally attacking it to check the defenses hold.
+---
+
+I'm a junior software engineer with about two years of professional experience, mostly backend Java. Security is the newer part for me. I'm working on an MS in Computer Science with a cybersecurity concentration at Arizona State University. I've finished **CSE 548 (Advanced Computer Network Security)** and I'm currently taking **CSE 543 (Information Assurance & Security)**.
+
+I wanted a project where I had to apply what I'm learning instead of just reading about it. So I built a password manager. Then I tried to break it. 😅
+
+VaultKeep is a local-first password manager in Python (CLI + Flask web app). I wrote the threat model first, then built the defenses: authenticated encryption, memory-hard key derivation, a tamper-evident audit log and a JWT-protected web API. After that I attacked it with my own scripts and ran a pre-release security review against OWASP ASVS and the CWE Top 25. Every push now goes through tests, secret scanning and three static analyzers. That's a lot of robots checking my homework. 🤖
 
 > **Not for real passwords.** VaultKeep is a learning and portfolio project and has not been independently audited. Use a maintained password manager for anything that matters.
 
-## Security design
+---
+
+## 🛠️ Tech Stack
+
+| Category | Technology |
+|----------|-----------|
+| Language | Python 3.12 |
+| Crypto | `cryptography` (AES-256-GCM), `argon2-cffi` (Argon2id) |
+| CLI | Click |
+| Web | Flask, PyJWT, Flask-Limiter, gunicorn |
+| Containerization | Docker (non-root, read-only file system, all capabilities dropped) |
+| CI/CD | GitHub Actions (actions pinned to commit SHAs) |
+| Security scanning | gitleaks, Bandit, pip-audit, CodeQL, SonarCloud, Semgrep, trufflehog |
+| Supply chain | Hash-locked dependencies (pip-tools), Dependabot |
+| Testing | pytest, pytest-cov (80% coverage gate) |
+
+---
+
+## 🔒 Security design
 
 | Concern | Approach |
 |---|---|
@@ -26,7 +51,9 @@ A local-first password manager in Python, built to practice secure design end to
 | Secrets in URLs | Requests that carry the master password are `POST`, so it never lands in URLs or server logs. |
 | Container | Runs as a non-root user on a read-only file system with all capabilities dropped, served by gunicorn, and published on `127.0.0.1` only. |
 
-## Threat model (summary)
+---
+
+## 🎯 Threat model (summary)
 
 **Assets:** stored credentials, the master password, the JWT signing key.
 
@@ -45,7 +72,9 @@ A local-first password manager in Python, built to practice secure design end to
 
 The full threat model — in scope, out of scope, trust boundaries — is in [THREAT_MODEL.md](THREAT_MODEL.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-## Attacking it
+---
+
+## ⚔️ Attacking it
 
 `attacks/` contains three scripts that test the defenses rather than just describe them:
 
@@ -59,7 +88,9 @@ python -m attacks.tamper_sim ~/.vaultkeep/vault.json ~/.vaultkeep/tampered.json 
 python -m attacks.timing_attack
 ```
 
-## Quick start
+---
+
+## 🚀 Quick start
 
 ### CLI
 
@@ -105,11 +136,15 @@ For local development without Docker, `python run.py` serves on `127.0.0.1:5000`
 
 All `/vault/*` routes need `Authorization: Bearer <token>`. Entries are unique per **service + username**, so one service can hold several accounts.
 
-## Vault format
+---
+
+## 📦 Vault format
 
 The current format is **v2**. Vaults created by earlier versions (v1) still open and are upgraded to v2 automatically on the next save. An empty v1 vault is refused, because without any entries its password can't be verified; delete it and run `init` again.
 
-## Development
+---
+
+## 🧪 Development
 
 ```bash
 pip install --require-hashes -r requirements-dev.txt   # runtime + test, lint and security tools
@@ -126,7 +161,9 @@ at install time, fails the install.
 
 The tests cover encryption round-trips, wrong-key and tampering rejection, the header key check, service-name binding, KDF bounds, v1 → v2 migration, atomic writes, the hash chain, CLI flows via Click's `CliRunner`, and the web layer: the fail-closed signing key, security headers, token binding and rate limiting. GitHub Actions runs the tests plus gitleaks, Bandit and pip-audit on every push, CodeQL (security-extended queries for Python and JavaScript) on every push and weekly, and SonarCloud with test coverage. Actions are pinned to commit SHAs, dependencies are hash-locked, and Dependabot keeps both current.
 
-## Project layout
+---
+
+## 📁 Project layout
 
 ```
 vaultkeep/
@@ -142,7 +179,9 @@ scripts/          security-scan.sh and pin-actions.sh
 tests/            pytest suite
 ```
 
-## Known limitations
+---
+
+## ⚠️ Known limitations
 
 Documented on purpose — each is a deliberate scope decision or a known gap:
 
@@ -156,7 +195,9 @@ Documented on purpose — each is a deliberate scope decision or a known gap:
 - **No browser-side tests.** The dashboard JavaScript is checked by CodeQL and SonarCloud but has no unit tests, so the coverage figure covers the Python code only.
 - **Re-entering the master password.** The JWT proves login but doesn't carry the decryption key, so each vault request re-sends the master password and re-derives the key.
 
-## Roadmap (v2)
+---
+
+## 🗺️ Roadmap (v2)
 
 - **Breached-password check** — warn on `add` if a password appears in known breach lists, using a local Bloom filter so the password never leaves the machine
 - **Envelope encryption** — random DEK wrapped by the password-derived KEK, so changing the master password re-wraps one key instead of re-encrypting every entry
@@ -165,6 +206,25 @@ Documented on purpose — each is a deliberate scope decision or a known gap:
 - **Rollback protection** and **audit logging for web routes**
 - **Item-ID addressing** and refresh tokens for the API
 
-## License
+---
+
+## 💡 What I Learned
+
+Coming from enterprise Java, I was used to security scanning being a gate someone else set up. Here I set it up myself, and it humbled me fast. The scanners caught things I'd missed: an unhandled network error in the UI, a dependency with a known CVE, and a new gunicorn feature that broke inside my read-only container. 😅
+
+Not every finding was real, though. Some were false positives, and learning to explain *why* something is or isn't a risk (like why CSRF doesn't apply to an API that never uses cookies) taught me as much as fixing the real ones.
+
+The biggest takeaway from CSE 548 and CSE 543 so far: security isn't a feature you add at the end. It's the threat model you write first, and it decides everything you build after. I'm still early in this, so if you're more experienced in security and spot something I got wrong, please open an issue. I'd like to learn from it. 🙏
+
+---
+
+## 👤 Author
+
+**Luis Moreno**  
+[GitHub](https://github.com/Luis-Morenoo) | [LinkedIn](https://www.linkedin.com/in/luis-moreno11/)
+
+---
+
+## 📄 License
 
 [MIT](LICENSE)
