@@ -30,3 +30,9 @@ security-reports/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test coverage output and throwaway venvs
+.coverage
+coverage.xml
+htmlcov/
+.venv*/

@@ -11,7 +11,9 @@ WORKDIR /app
 
 # Runtime dependencies only - no test or lint tools in the image
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# --require-hashes: every file must match the sha256 in the lockfile
+# --only-binary: wheels only, so no package's setup.py ever runs at build time
+RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements.txt
 
 # Only the application package; tests, attacks, docs and secrets stay out
 COPY vaultkeep/ vaultkeep/
