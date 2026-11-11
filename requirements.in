@@ -3,7 +3,7 @@
 # requirements.txt is generated from it with every transitive dependency pinned
 # and sha256-hashed, so installs fail if a downloaded file doesn't match.
 argon2-cffi==25.1.0
-click==8.5.0
+click==8.5.1
 cryptography==50.0.2
 Flask==3.1.3
 Flask-Limiter==4.1.1
