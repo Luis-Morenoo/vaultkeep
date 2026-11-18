@@ -7,7 +7,7 @@ click==8.5.1
 cryptography==50.0.2
 Flask==3.1.3
 Flask-Limiter==4.1.1
-gunicorn==26.2.0
+gunicorn==27.0.1
 PyJWT==2.15.1
 # click and pytest only pull colorama in on Windows; listing it keeps the lockfile
 # (built on Linux) installable on Windows dev machines with --require-hashes
